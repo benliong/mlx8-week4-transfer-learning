@@ -1,0 +1,14 @@
+[project]
+name = "mlx8-w4-transferlearning"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "accelerate>=1.8.1",
+    "datasets>=3.6.0",
+    "pillow>=11.2.1",
+    "scikit-learn>=1.7.0",
+    "torch>=2.7.1",
+    "torchvision>=0.22.1",
+    "transformers>=4.53.0",
+]
