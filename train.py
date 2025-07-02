@@ -9,6 +9,7 @@ from model import Model
 import torch.optim as optim
 from utils import get_device
 from dataset import load_flickr30k_dataset, create_flickr30k_dataloaders
+from eval import evaluate
 
 # Set up logging
 setup_logging()
@@ -23,13 +24,13 @@ hyperparameters = {
     "max_caption_length": 128,
 }
 
-def train(model, dataloader, loss_function, optimizer, device, epoch_num, num_epochs):
+def train(model, training_dataloader, validation_dataloader, optimizer, device, epoch_num, num_epochs):
     model.train()
     running_loss = 0
     log_interval = 10  # Log every 10 batches
     
     # Create progress bar
-    pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch_num}/{num_epochs}")
+    pbar = tqdm(enumerate(training_dataloader), total=len(training_dataloader), desc=f"Epoch {epoch_num}/{num_epochs}")
     
     for batch_idx, batch in pbar:
         batch_images = batch["image"]
@@ -54,15 +55,20 @@ def train(model, dataloader, loss_function, optimizer, device, epoch_num, num_ep
         pbar.set_postfix({
             'Loss': f'{loss.item():.4f}',
             'Avg Loss': f'{current_avg_loss:.4f}'
-        
         })
         # Log loss periodically
-        if (batch_idx + 1) % log_interval == 0:
-            logger.info(f"Epoch {epoch_num}/{num_epochs}, Batch {batch_idx + 1}/{len(dataloader)}, "
+        if (batch_idx + 1) % log_interval == 10:
+            logger.info(f"Epoch {epoch_num}/{num_epochs}, Batch {batch_idx + 1}/{len(training_dataloader)}, "
                        f"Current Loss: {loss.item():.4f}, Running Avg Loss: {current_avg_loss:.4f}")
 
-    average_loss = running_loss / len(dataloader)
-    return average_loss
+    validation_loss, validation_score = evaluate(
+        dataloader=validation_dataloader,
+        model=model,
+        epoch_num=epoch_num,
+        num_epochs=num_epochs
+    )
+    training_loss = running_loss / len(training_dataloader)
+    return training_loss, validation_loss, validation_score
 
 if __name__ == "__main__":
     datasets = load_flickr30k_dataset()
@@ -84,14 +90,13 @@ if __name__ == "__main__":
 
     model = Model().to(get_device())
     optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
-    loss_function = nn.CrossEntropyLoss()
     # for epoch_num in range(hyperparameters["num_epochs"]):
 
     for epoch_num in range(hyperparameters["num_epochs"]):
-        train_loss = train(
+        training_loss, validation_loss, validation_score = train(
             model=model,
-            dataloader=training_dataloader,
-            loss_function=loss_function,
+            training_dataloader=training_dataloader,
+            validation_dataloader=validation_dataloader,
             optimizer=optimizer,
             device=get_device(),
             epoch_num=0,

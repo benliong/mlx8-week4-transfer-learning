@@ -1,7 +1,6 @@
 import torch
 from tqdm import tqdm
 from dataset import load_flickr30k_dataset, create_flickr30k_dataloaders
-from train import hyperparameters
 from model import Model
 from utils import get_device, setup_logging
 import torch.nn as nn
@@ -49,6 +48,15 @@ def evaluate(dataloader, model, epoch_num, num_epochs):
     return validation_loss, average_score
 
 if __name__ == "__main__":
+    hyperparameters = {
+        "batch_size": 1, 
+        "num_epochs": 1,
+        "learning_rate": 0.001,
+        "image_size": 224,
+        "tokenizer_name": "Qwen/Qwen3-0.6B-Base",
+        "max_caption_length": 128,
+    }
+
     datasets = load_flickr30k_dataset()
     dataloaders = create_flickr30k_dataloaders(
         datasets=datasets,
