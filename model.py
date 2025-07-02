@@ -1,9 +1,12 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, CLIPModel, CLIPProcessor, AutoTokenizer
-from utils import get_device
+from utils import get_device, setup_logging
 from PIL import Image   
 import logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 class ClipEncoder(nn.Module):
     #   Input Shape: (batch_size, 3, 224, 224)
@@ -30,7 +33,7 @@ class QwenDecoder(nn.Module):
     #   )
     def __init__(self, freeze_qwen=True):
         super().__init__()
-        self.qwen_model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B-Base", device_map=get_device(), torch_dtype=torch.bfloat16)
+        self.qwen_model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-0.6B-Base", torch_dtype=torch.bfloat16)
         if freeze_qwen:
             for param in self.qwen_model.parameters():
                 param.requires_grad = False
@@ -44,40 +47,52 @@ class Model(nn.Module):
         self.clip_encoder = ClipEncoder()
         self.mlp = nn.Linear(512, 1024)
         self.qwen_decoder = QwenDecoder()
+        self.qwen_decoder.qwen_model.model.embed_tokens = self.qwen_decoder.qwen_model.model.embed_tokens.to(get_device())
+        print("[QwenDecoder] embed_tokens device:", self.qwen_decoder.qwen_model.model.embed_tokens.weight.device)
+
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     def forward(self, images, input_ids, attention_mask):
+        input_ids = input_ids.to(get_device())
+        attention_mask = attention_mask.to(get_device())
+        
+        # logger.info(f"input_ids device: {input_ids.device}")
+        # logger.info(f"attention_mask device: {attention_mask.device}")
 
-        print("images shape: PIL")
-        print("input_ids shape: ", input_ids.shape)
-        print("attention_mask shape: ", attention_mask.shape)
+        # logger.info(f"images shape: PIL")
+        # logger.info(f"input_ids shape: {input_ids.shape}")
+        # logger.info(f"attention_mask shape: {attention_mask.shape}")
 
         # 1. Encode Images using CLIP into Patch Embeddings
-        print("[Clip_encoder]")
+        # logger.info("[Clip_encoder]")
+        
         images_embeddings = self.clip_encoder(images)
-        print("images_embeddings shape: ", images_embeddings.shape)
-        print("[/Clip_encoder]")
+        
+        # logger.info(f"images_embeddings shape: {images_embeddings.shape}")
+        # logger.info("[/Clip_encoder]")
 
         # 2. Adapt the image features to the Qwen model
-        print("[MLP]")
+        # logger.info("[MLP]")
+        
         images_embeddings = self.mlp(images_embeddings) # map from 512 to 1024
-        print("image embeddings shape: ", images_embeddings.shape)
-        print("[/MLP]")
+        
+        # logger.info(f"image embeddings shape: {images_embeddings.shape}")
+        # logger.info("[/MLP]")
 
-        print("[unsqueeze]")
+        # logger.info("[unsqueeze]")
         images_embeddings = images_embeddings.unsqueeze(1)
-        print("images_embeddings shape: ", images_embeddings.shape)
-        print("[/unsqueeze]")
+        # logger.info(f"images_embeddings shape: {images_embeddings.shape}")
+        # logger.info("[/unsqueeze]")
 
         # 3 Generate input for Qwen Decoder // dimension == 1024
         # 3.1 turn input_ids into text embeddings (using Qwen Tokenizer)
         input_embeddings = self.qwen_decoder.qwen_model.model.embed_tokens(input_ids) # "A man with a beard" -> [15919, 525, 19837, 151643, 151643, 151643]
         # 3.2 insert image embeddings to the front of the text embeddings
-        print("[Concat]...")
-        print("image embeddings shape: ", images_embeddings.shape)
-        print("input embeddings shape: ", input_embeddings.shape)
+        # logger.info("[Concat]...")
+        # logger.info(f"image embeddings shape: {images_embeddings.shape}")
+        # logger.info(f"input embeddings shape: {input_embeddings.shape}")
         input_embeddings = torch.cat([images_embeddings, input_embeddings], dim=1) # [Image, A, Man, with, a, beard]
-        print("input embeddings shape: ", input_embeddings.shape)
+        # logger.info(f"input embeddings shape: {input_embeddings.shape}")
             
         # input_embeddings.input_ids = input_embeddings.input_ids
         # 3.3 generate labels from input_ids

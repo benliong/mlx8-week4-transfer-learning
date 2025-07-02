@@ -15,8 +15,8 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 hyperparameters = {
-    "batch_size": 4, 
-    "num_epochs": 10,
+    "batch_size": 1, 
+    "num_epochs": 1,
     "learning_rate": 0.001,
     "image_size": 224,
     "tokenizer_name": "Qwen/Qwen3-0.6B-Base",
@@ -87,13 +87,13 @@ if __name__ == "__main__":
     loss_function = nn.CrossEntropyLoss()
     # for epoch_num in range(hyperparameters["num_epochs"]):
 
-    train_loss = train(
-        model=model,
-        dataloader=training_dataloader,
-        loss_function=loss_function,
-        optimizer=optimizer,
-        device=get_device(),
-        epoch_num=0,
-        num_epochs=1)
-    logger.info(f"Training loss: {train_loss}")
+    for epoch_num in range(hyperparameters["num_epochs"]):
+        train_loss = train(
+            model=model,
+            dataloader=training_dataloader,
+            loss_function=loss_function,
+            optimizer=optimizer,
+            device=get_device(),
+            epoch_num=0,
+            num_epochs=1)
     
