@@ -26,7 +26,12 @@ hyperparameters = {
 def train(model, dataloader, loss_function, optimizer, device, epoch_num, num_epochs):
     model.train()
     running_loss = 0
-    for batch_idx, batch in tqdm(enumerate(dataloader), total=len(dataloader), desc="Epoch " + str(epoch_num) + "/" + str(num_epochs) + " Training"):
+    log_interval = 10  # Log every 10 batches
+    
+    # Create progress bar
+    pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch_num}/{num_epochs}")
+    
+    for batch_idx, batch in pbar:
         batch_images = batch["image"]
         batch_input_ids = batch["input_ids"].to(device)
         batch_attention_mask = batch["attention_mask"].to(device)   
@@ -43,6 +48,18 @@ def train(model, dataloader, loss_function, optimizer, device, epoch_num, num_ep
         optimizer.step() # update the model parameters
         optimizer.zero_grad() # clear the gradients (reset)
         running_loss += loss.item()
+        
+        # Update progress bar with current loss
+        current_avg_loss = running_loss / (batch_idx + 1)
+        pbar.set_postfix({
+            'Loss': f'{loss.item():.4f}',
+            'Avg Loss': f'{current_avg_loss:.4f}'
+        
+        })
+        # Log loss periodically
+        if (batch_idx + 1) % log_interval == 0:
+            logger.info(f"Epoch {epoch_num}/{num_epochs}, Batch {batch_idx + 1}/{len(dataloader)}, "
+                       f"Current Loss: {loss.item():.4f}, Running Avg Loss: {current_avg_loss:.4f}")
 
     average_loss = running_loss / len(dataloader)
     return average_loss
