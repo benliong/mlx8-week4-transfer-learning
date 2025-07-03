@@ -191,3 +191,146 @@ def verify_flickr30k_cache():
         print(f"  Flickr30k Cached: {'✅ Yes' if cache_info['flickr30k_cached'] else '❌ No'}")
     
     return cache_info
+
+
+def load_saved_model(model_path, model_class=None):
+    """
+    Load a saved model state dict and associated metadata.
+    
+    Args:
+        model_path (str): Path to the saved model file (.pth)
+        model_class (class, optional): Model class to instantiate. If not provided,
+                                     will return only the checkpoint data.
+    
+    Returns:
+        dict: Dictionary containing:
+            - 'model': Instantiated model with loaded weights (if model_class provided)
+            - 'optimizer_state_dict': Saved optimizer state
+            - 'hyperparameters': Training hyperparameters
+            - 'training_history': Training metrics history
+            - 'epoch': Number of epochs trained
+            - 'checkpoint': Raw checkpoint data
+    """
+    import json
+    import os
+    
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+    
+    # Load the checkpoint
+    device = get_device()
+    checkpoint = torch.load(model_path, map_location=device)
+    
+    result = {
+        'optimizer_state_dict': checkpoint.get('optimizer_state_dict'),
+        'hyperparameters': checkpoint.get('hyperparameters'),
+        'training_history': checkpoint.get('training_history'),
+        'epoch': checkpoint.get('epoch'),
+        'checkpoint': checkpoint
+    }
+    
+    # If model class is provided, instantiate and load the model
+    if model_class is not None:
+        model = model_class()
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.to(device)
+        result['model'] = model
+    
+    return result
+
+
+def list_saved_models(save_dir="saved_models"):
+    """
+    List all saved models in the specified directory.
+    
+    Args:
+        save_dir (str): Directory containing saved models
+        
+    Returns:
+        list: List of dictionaries with model information
+    """
+    import os
+    import json
+    from datetime import datetime
+    
+    if not os.path.exists(save_dir):
+        print(f"Save directory '{save_dir}' does not exist.")
+        return []
+    
+    models = []
+    
+    # Look for model files
+    for filename in os.listdir(save_dir):
+        if filename.startswith("model_state_dict_") and filename.endswith(".pth"):
+            model_path = os.path.join(save_dir, filename)
+            
+            # Extract timestamp from filename
+            timestamp_str = filename.replace("model_state_dict_", "").replace(".pth", "")
+            
+            # Look for corresponding metadata file
+            metadata_file = os.path.join(save_dir, f"training_metadata_{timestamp_str}.json")
+            metadata = None
+            
+            if os.path.exists(metadata_file):
+                try:
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                except Exception as e:
+                    print(f"Error reading metadata for {filename}: {e}")
+            
+            # Get file size
+            file_size_mb = os.path.getsize(model_path) / (1024 * 1024)
+            
+            models.append({
+                'filename': filename,
+                'path': model_path,
+                'timestamp': timestamp_str,
+                'size_mb': file_size_mb,
+                'metadata': metadata
+            })
+    
+    # Sort by timestamp (newest first)
+    models.sort(key=lambda x: x['timestamp'], reverse=True)
+    
+    return models
+
+
+def print_model_summary(save_dir="saved_models"):
+    """
+    Print a summary of all saved models.
+    
+    Args:
+        save_dir (str): Directory containing saved models
+    """
+    models = list_saved_models(save_dir)
+    
+    if not models:
+        print(f"No saved models found in '{save_dir}'")
+        return
+    
+    print(f"\n📊 Found {len(models)} saved model(s) in '{save_dir}':")
+    print("-" * 80)
+    
+    for i, model_info in enumerate(models, 1):
+        print(f"{i}. {model_info['filename']}")
+        print(f"   📁 Size: {model_info['size_mb']:.1f} MB")
+        print(f"   📅 Timestamp: {model_info['timestamp']}")
+        
+        if model_info['metadata']:
+            metadata = model_info['metadata']
+            hyperparams = metadata.get('hyperparameters', {})
+            history = metadata.get('training_history', {})
+            
+            print(f"   ⚙️  Epochs: {hyperparams.get('num_epochs', 'N/A')}")
+            print(f"   📈 Batch Size: {hyperparams.get('batch_size', 'N/A')}")
+            print(f"   🎯 Learning Rate: {hyperparams.get('learning_rate', 'N/A')}")
+            
+            if history.get('training_losses'):
+                final_train_loss = history['training_losses'][-1]
+                print(f"   📉 Final Training Loss: {final_train_loss:.4f}")
+            
+            if history.get('validation_losses'):
+                final_val_loss = history['validation_losses'][-1]
+                print(f"   📊 Final Validation Loss: {final_val_loss:.4f}")
+                
+        print("-" * 40)

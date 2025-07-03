@@ -10,6 +10,10 @@ import torch.optim as optim
 from utils import get_device
 from dataset import load_flickr30k_dataset, create_flickr30k_dataloaders
 from eval import evaluate
+import torch
+import os
+import json
+from datetime import datetime
 
 # Set up logging
 setup_logging()
@@ -90,7 +94,13 @@ if __name__ == "__main__":
 
     model = Model().to(get_device())
     optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
-    # for epoch_num in range(hyperparameters["num_epochs"]):
+    
+    # Track training metrics
+    training_history = {
+        "training_losses": [],
+        "validation_losses": [],
+        "validation_scores": []
+    }
 
     for epoch_num in range(hyperparameters["num_epochs"]):
         training_loss, validation_loss, validation_score = train(
@@ -99,6 +109,47 @@ if __name__ == "__main__":
             validation_dataloader=validation_dataloader,
             optimizer=optimizer,
             device=get_device(),
-            epoch_num=0,
-            num_epochs=1)
+            epoch_num=epoch_num,
+            num_epochs=hyperparameters["num_epochs"])
+        
+        # Store training metrics
+        training_history["training_losses"].append(training_loss)
+        training_history["validation_losses"].append(validation_loss)
+        training_history["validation_scores"].append(validation_score)
+    
+    logger.info("Training completed! Saving model...")
+    
+    # Create saved_models directory if it doesn't exist
+    save_dir = "saved_models"
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Generate timestamp for unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Save model state dict (recommended approach)
+    model_path = os.path.join(save_dir, f"model_state_dict_{timestamp}.pth")
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'hyperparameters': hyperparameters,
+        'training_history': training_history,
+        'epoch': hyperparameters["num_epochs"],
+    }, model_path)
+    
+    # Save hyperparameters and training history as JSON for easy access
+    metadata_path = os.path.join(save_dir, f"training_metadata_{timestamp}.json")
+    with open(metadata_path, 'w') as f:
+        json.dump({
+            'hyperparameters': hyperparameters,
+            'training_history': training_history,
+            'model_path': model_path,
+            'timestamp': timestamp
+        }, f, indent=2)
+    
+    logger.info(f"Model saved successfully!")
+    logger.info(f"Model state dict: {model_path}")
+    logger.info(f"Training metadata: {metadata_path}")
+    logger.info(f"Final training loss: {training_history['training_losses'][-1]:.4f}")
+    logger.info(f"Final validation loss: {training_history['validation_losses'][-1]:.4f}")
+    logger.info(f"Final validation score: {training_history['validation_scores'][-1]:.4f}")
     
