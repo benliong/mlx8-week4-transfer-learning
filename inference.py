@@ -11,7 +11,7 @@ import os
 setup_logging()
 logger = logging.getLogger(__name__)
 
-def inference(image, model, hyperparameters, training_history):
+def inference(image, model, hyperparameters, training_history, max_length=None):
     model.eval()
     model = model.to(get_device())
     device = get_device()
@@ -26,7 +26,17 @@ def inference(image, model, hyperparameters, training_history):
     attention_mask = torch.ones_like(input_ids, dtype=torch.long, device=device)
 
     # Generate text autoregressively
-    max_length = 50  # Adjust as needed
+    # Use training max length by default, but allow override
+    training_max_length = hyperparameters.get("max_caption_length", 128)
+    
+    if max_length is None:
+        max_length = training_max_length  # Use training length by default
+        logger.info(f"Using training max length: {max_length} tokens")
+    else:
+        logger.info(f"Using custom max length: {max_length} tokens (training used: {training_max_length})")
+        if max_length > training_max_length:
+            logger.warning(f"⚠️ Generating longer than training length! May produce lower quality text.")
+    
     generated_tokens = [model.tokenizer.bos_token_id]
     
     with torch.no_grad():
@@ -56,6 +66,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run inference on an image using a trained model")
     parser.add_argument("--model", "-m", required=True, help="Path to the model file (.pth)")
     parser.add_argument("--image", "-i", default="images/bes.jpg", help="Path to the input image (default: test.jpg)")
+    parser.add_argument("--max-length", type=int, default=None, 
+                       help="Maximum tokens to generate (default: use training max_caption_length)")
     
     try:
         args = parser.parse_args()
@@ -129,4 +141,8 @@ if __name__ == "__main__":
     logger.info("✅ Image loaded successfully!")
     logger.info("✅ Image converted to RGB (224x224) successfully!")
 
-    inference(image, model, hyperparameters, training_history)
+    # Run inference with specified max length
+    if args.max_length is not None:
+        logger.info(f"Using command-line max length: {args.max_length}")
+    
+    inference(image, model, hyperparameters, training_history, max_length=args.max_length)
