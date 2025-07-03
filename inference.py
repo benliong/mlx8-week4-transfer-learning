@@ -91,6 +91,11 @@ if __name__ == "__main__":
     num_epochs = model_data['epoch']
     logger.info("✅ Model loaded successfully!")
     logger.info(f"Model was trained for {num_epochs} epochs")
+    
+    # Ensure BOS token is added to tokenizer (same as in model.py)
+    model.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
+    model.qwen_decoder.qwen_model.model.resize_token_embeddings(len(model.tokenizer))
+    logger.info(f"✅ Adding BOS to tokenizer in inference ({model.tokenizer.bos_token_id})")
 
     # Process the image
     image = Image.open(args.image)
