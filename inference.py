@@ -89,13 +89,38 @@ if __name__ == "__main__":
     hyperparameters = model_data['hyperparameters']
     training_history = model_data['training_history']
     num_epochs = model_data['epoch']
+    checkpoint = model_data['checkpoint']
     logger.info("✅ Model loaded successfully!")
     logger.info(f"Model was trained for {num_epochs} epochs")
     
-    # Ensure BOS token is added to tokenizer (same as in model.py)
-    model.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
-    model.qwen_decoder.qwen_model.model.resize_token_embeddings(len(model.tokenizer))
-    logger.info(f"✅ Adding BOS to tokenizer in inference ({model.tokenizer.bos_token_id})")
+    # Use the exact BOS token ID that was saved during training
+    saved_bos_token_id = checkpoint.get('bos_token_id')
+    saved_vocab_size = checkpoint.get('tokenizer_vocab_size')
+    
+    if saved_bos_token_id is not None:
+        # Ensure tokenizer setup matches training
+        model.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
+        model.qwen_decoder.qwen_model.model.resize_token_embeddings(len(model.tokenizer))
+        
+        # Verify we got the same BOS token ID
+        current_bos_id = model.tokenizer.bos_token_id
+        current_vocab_size = len(model.tokenizer)
+        
+        if current_bos_id != saved_bos_token_id:
+            logger.error(f"❌ BOS token ID mismatch! Training: {saved_bos_token_id}, Current: {current_bos_id}")
+            logger.error("This will cause incorrect inference results!")
+            exit(1)
+        
+        if saved_vocab_size and current_vocab_size != saved_vocab_size:
+            logger.warning(f"⚠️ Vocab size mismatch! Training: {saved_vocab_size}, Current: {current_vocab_size}")
+        
+        logger.info(f"✅ BOS token ID verified: {current_bos_id} (matches training)")
+    else:
+        # Fallback for older saved models without BOS token ID
+        logger.warning("⚠️ No saved BOS token ID found. Using current tokenizer setup.")
+        model.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
+        model.qwen_decoder.qwen_model.model.resize_token_embeddings(len(model.tokenizer))
+        logger.info(f"⚠️ Using BOS token ID: {model.tokenizer.bos_token_id} (not verified)")
 
     # Process the image
     image = Image.open(args.image)

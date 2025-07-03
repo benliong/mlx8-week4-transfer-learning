@@ -54,6 +54,8 @@ def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir
         'loss': loss,
         'score': score,
         'training_size': training_size,
+        'bos_token_id': model.tokenizer.bos_token_id,  # Save the exact BOS token ID used during training
+        'tokenizer_vocab_size': len(model.tokenizer),  # Also save vocab size for verification
     }, model_path)
     
     # Save hyperparameters and training history as JSON for easy access
@@ -68,6 +70,8 @@ def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir
             'num_epochs': hyperparameters["num_epochs"],
             'loss': loss,
             'score': score,
+            'bos_token_id': model.tokenizer.bos_token_id,
+            'tokenizer_vocab_size': len(model.tokenizer),
         }, f, indent=2)
     
     logger.info(f"Model saved successfully!")
