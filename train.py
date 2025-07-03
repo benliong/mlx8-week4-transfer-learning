@@ -21,7 +21,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 hyperparameters = {
-    "batch_size": 1, 
+    "batch_size": 4, 
     "num_epochs": 5,
     "learning_rate": 0.0001,
     "learning_rate_decay": 0.8,
@@ -30,9 +30,10 @@ hyperparameters = {
     "image_size": 224,
     "tokenizer_name": "Qwen/Qwen3-0.6B-Base",
     "max_caption_length": 128,
+    "training_size_limit": 500, # None for max
 }
 
-def save_model(model, optimizer, epoch_num, loss, score, save_dir = "saved_models"):
+def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir = "saved_models"):
     logger.info("Saving model...")
     
     os.makedirs(save_dir, exist_ok=True)
@@ -51,6 +52,7 @@ def save_model(model, optimizer, epoch_num, loss, score, save_dir = "saved_model
         'num_epochs': hyperparameters["num_epochs"],
         'loss': loss,
         'score': score,
+        'training_size': training_size,
     }, model_path)
     
     # Save hyperparameters and training history as JSON for easy access
@@ -77,7 +79,7 @@ def train(model, training_dataloader, validation_dataloader, optimizer, device, 
     log_interval = 10  # Log every 10 batches
     
     # Create progress bar
-    pbar = tqdm(enumerate(training_dataloader), total=len(training_dataloader), desc=f"Epoch {epoch_num}/{num_epochs}")
+    pbar = tqdm(enumerate(training_dataloader), total=len(training_dataloader), desc=f"Training Epoch {epoch_num}/{num_epochs}")
     
     for batch_idx, batch in pbar:
         batch_images = batch["image"]
@@ -115,10 +117,18 @@ def train(model, training_dataloader, validation_dataloader, optimizer, device, 
         num_epochs=num_epochs
     )
     training_loss = running_loss / len(training_dataloader)
-    save_model(model, optimizer, epoch_num, training_loss, validation_score)
+    training_size = len(training_dataloader)
+    save_model(model, optimizer, epoch_num, training_loss, validation_score, training_size)
+    logger.info(f"Training Epoch {epoch_num}/{num_epochs} completed!")
+    logger.info(f"Training size: {training_size}")
+    logger.info(f"Training loss: {training_loss}")
+    logger.info(f"Validation loss: {validation_loss}")
+    logger.info(f"Validation score: {validation_score}")
+    
     if hyperparameters["learning_rate_scheduler_enabled"]:
         scheduler.step()
-    return training_loss, validation_loss, validation_score
+    
+    return training_loss, validation_loss, validation_score, training_size
 
 if __name__ == "__main__":
     datasets = load_flickr30k_dataset()
@@ -128,7 +138,8 @@ if __name__ == "__main__":
         batch_size=hyperparameters["batch_size"],
         tokenizer_name=hyperparameters["tokenizer_name"],
         max_caption_length=hyperparameters["max_caption_length"],
-        use_all_captions=False
+        use_all_captions=False,
+        train_size_limit=hyperparameters["training_size_limit"]
     )
     
     # Extract individual dataloaders
@@ -153,7 +164,7 @@ if __name__ == "__main__":
     for epoch_num in range(hyperparameters["num_epochs"]):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        training_loss, validation_loss, validation_score = train(
+        training_loss, validation_loss, validation_score, training_size = train(
             model=model,
             training_dataloader=training_dataloader,
             validation_dataloader=validation_dataloader,
@@ -204,4 +215,5 @@ if __name__ == "__main__":
     logger.info(f"Final training loss: {training_history['training_losses'][-1]:.4f}")
     logger.info(f"Final validation loss: {training_history['validation_losses'][-1]:.4f}")
     logger.info(f"Final validation score: {training_history['validation_scores'][-1]:.4f}")
+    logger.info(f"Final training size: {training_history['training_sizes'][-1]}")
     

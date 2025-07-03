@@ -18,7 +18,7 @@ def evaluate(dataloader, model, epoch_num, num_epochs):
     batch_size = len(dataloader)
     validation_loss = 0
     with torch.no_grad():
-        pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch_num}/{num_epochs}")
+        pbar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Eval Epoch {epoch_num}/{num_epochs}")
         for batch_idx, batch in pbar:
             images = batch["image"]
             labels = batch["input_ids"]
@@ -42,7 +42,7 @@ def evaluate(dataloader, model, epoch_num, num_epochs):
                 
             validation_loss += output.loss.item()
     validation_loss /= batch_size
-    average_score /= batch_size
+    average_score /= validation_datasize
     # print(f"Epoch {epoch_num} Validation Loss: {validation_loss:.4f}")
     # print(f"Epoch {epoch_num} Average ROUGE-L score: {average_score:.4f}")
     return validation_loss, average_score

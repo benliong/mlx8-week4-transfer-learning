@@ -275,7 +275,8 @@ def create_flickr30k_dataloaders(datasets,
                                  num_workers = 4, 
                                  tokenizer_name = "Qwen/Qwen3-0.6B-Base",
                                  max_caption_length = 128,
-                                 use_all_captions = False):
+                                 use_all_captions = False,
+                                 train_size_limit = None):
     """
     Create DataLoaders for training, validation, and test sets.
     
@@ -285,6 +286,7 @@ def create_flickr30k_dataloaders(datasets,
         num_workers: Number of workers for data loading
         tokenizer_name: Tokenizer to use
         use_all_captions: If True, use all captions (5x more samples)
+        train_size_limit: If provided, limit training set to this many samples
     
     Returns:
         dict: Dictionary with DataLoaders for each split
@@ -292,9 +294,24 @@ def create_flickr30k_dataloaders(datasets,
     
     dataset_class = Flickr30kCaptionDataset if use_all_captions else Flickr30kDataset
     
+    # Apply training size limit if specified
+    pin_memory = torch.cuda.is_available()  # True only on NVIDIA GPU
+
+    train_split = datasets['train']
+    if train_size_limit is not None and train_size_limit > 0:
+        original_train_size = len(train_split)
+        train_size_limit = min(train_size_limit, original_train_size)
+        train_split = train_split.select(range(train_size_limit))
+        logger.info(f"Training set limited from {original_train_size} to {train_size_limit} samples")
+
+        original_val_size = len(datasets['validation'])
+        val_size_limit = min(train_size_limit, original_val_size)
+        val_split = datasets['validation'].select(range(val_size_limit))
+        logger.info(f"Validation set limited from {original_val_size} to {val_size_limit} samples")
+    
     # Create datasets
-    train_dataset = dataset_class(huggingface_dataset=datasets['train'], tokenizer_name=tokenizer_name, image_size=image_size, max_caption_length=max_caption_length)
-    val_dataset = dataset_class(huggingface_dataset=datasets['validation'], tokenizer_name=tokenizer_name, image_size=image_size, max_caption_length=max_caption_length)
+    train_dataset = dataset_class(huggingface_dataset=train_split, tokenizer_name=tokenizer_name, image_size=image_size, max_caption_length=max_caption_length)
+    val_dataset = dataset_class(huggingface_dataset=val_split, tokenizer_name=tokenizer_name, image_size=image_size, max_caption_length=max_caption_length)
     test_dataset = dataset_class(huggingface_dataset=datasets['test'], tokenizer_name=tokenizer_name, image_size=image_size, max_caption_length=max_caption_length)
     
     # Create dataloaders
@@ -303,7 +320,7 @@ def create_flickr30k_dataloaders(datasets,
         batch_size=batch_size, 
         shuffle=True, 
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=pin_memory,
         collate_fn=custom_collate_fn
     )
     
@@ -312,7 +329,7 @@ def create_flickr30k_dataloaders(datasets,
         batch_size=batch_size, 
         shuffle=False, 
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=pin_memory,
         collate_fn=custom_collate_fn
     )
     
@@ -321,7 +338,7 @@ def create_flickr30k_dataloaders(datasets,
         batch_size=batch_size, 
         shuffle=False, 
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=pin_memory,
         collate_fn=custom_collate_fn
     )
     
