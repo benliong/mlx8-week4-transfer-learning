@@ -215,5 +215,4 @@ if __name__ == "__main__":
     logger.info(f"Final training loss: {training_history['training_losses'][-1]:.4f}")
     logger.info(f"Final validation loss: {training_history['validation_losses'][-1]:.4f}")
     logger.info(f"Final validation score: {training_history['validation_scores'][-1]:.4f}")
-    logger.info(f"Final training size: {training_history['training_sizes'][-1]}")
     
