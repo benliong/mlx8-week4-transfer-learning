@@ -16,15 +16,41 @@ def inference(image, model, hyperparameters, training_history):
     model = model.to(get_device())
     device = get_device()
 
+    # Verify BOS token exists
+    if model.tokenizer.bos_token_id is None:
+        logger.error("BOS token not found in tokenizer!")
+        return
+    
+    logger.info(f"Using BOS token: '{model.tokenizer.bos_token}' (ID: {model.tokenizer.bos_token_id})")
     input_ids = torch.tensor([model.tokenizer.bos_token_id], dtype=torch.long, device=device)
     attention_mask = torch.ones_like(input_ids, dtype=torch.long, device=device)
 
+    # Generate text autoregressively
+    max_length = 50  # Adjust as needed
+    generated_tokens = [model.tokenizer.bos_token_id]
+    
     with torch.no_grad():
-        outputs = model(images=[image], input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits
-        predicted_token_ids = torch.argmax(outputs.logits, dim=-1)
-        output_string = model.tokenizer.batch_decode(predicted_token_ids, skip_special_tokens=True)[0]
-        logger.info(f"Output string: {output_string}")
+        for _ in range(max_length):
+            current_input_ids = torch.tensor([generated_tokens], dtype=torch.long, device=device)
+            current_attention_mask = torch.ones_like(current_input_ids, dtype=torch.long, device=device)
+            
+            outputs = model(images=[image], input_ids=current_input_ids, attention_mask=current_attention_mask)
+            logits = outputs.logits
+            
+            # Get the next token (last token in the sequence)
+            next_token_logits = logits[0, -1, :]
+            next_token_id = torch.argmax(next_token_logits, dim=-1).item()
+            
+            # Stop if we hit EOS token
+            if hasattr(model.tokenizer, 'eos_token_id') and next_token_id == model.tokenizer.eos_token_id:
+                break
+                
+            generated_tokens.append(next_token_id)
+        
+        # Decode the full generated sequence (excluding BOS for cleaner output)
+        output_string = model.tokenizer.decode(generated_tokens[1:], skip_special_tokens=True)
+        logger.info(f"Generated text: {output_string}")
+        return output_string
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run inference on an image using a trained model")
