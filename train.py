@@ -20,9 +20,12 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 hyperparameters = {
-    "batch_size": 1, 
-    "num_epochs": 1,
-    "learning_rate": 0.001,
+    "batch_size": 4, 
+    "num_epochs": 5,
+    "learning_rate": 0.0001,
+    "learning_rate_decay": 0.8,
+    "learning_rate_decay_step": 1,
+    "learning_rate_scheduler_enabled": True,
     "image_size": 224,
     "tokenizer_name": "Qwen/Qwen3-0.6B-Base",
     "max_caption_length": 128,
@@ -72,6 +75,8 @@ def train(model, training_dataloader, validation_dataloader, optimizer, device, 
         num_epochs=num_epochs
     )
     training_loss = running_loss / len(training_dataloader)
+    if hyperparameters["learning_rate_scheduler_enabled"]:
+        scheduler.step()
     return training_loss, validation_loss, validation_score
 
 if __name__ == "__main__":
@@ -94,7 +99,9 @@ if __name__ == "__main__":
 
     model = Model().to(get_device())
     optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
-    
+    if hyperparameters["learning_rate_scheduler_enabled"]:
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=hyperparameters["learning_rate_decay_step"], gamma=hyperparameters["learning_rate_decay"])
+
     # Track training metrics
     training_history = {
         "training_losses": [],
