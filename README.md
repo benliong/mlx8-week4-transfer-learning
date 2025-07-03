@@ -168,6 +168,17 @@ Comprehensive logging is implemented throughout:
 - Adjust `training_size_limit` for faster experimentation
 - Enable evaluation only when needed (set `evaluation_enabled=True`)
 
+## Documentation
+
+For comprehensive documentation, see:
+- **[Documentation Overview](docs/OVERVIEW.md)** - Navigation guide for all documentation
+- **[API Reference](docs/API.md)** - Complete technical reference for all modules  
+- **[Training Guide](docs/TRAINING_GUIDE.md)** - Detailed training instructions and tutorials
+
+## Assignment Reference
+
+This project implements the requirements from `resources/mlx8_week_4_caption.pdf`. The assignment focuses on transfer learning for image captioning using vision-language models.
+
 ## License
 
 This project is for educational purposes as part of MLX Week 4 assignment.
