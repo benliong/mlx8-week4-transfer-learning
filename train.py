@@ -184,7 +184,8 @@ if __name__ == "__main__":
     training_history = {
         "training_losses": [],
         "validation_losses": [],
-        "validation_scores": []
+        "validation_scores": [],
+        "training_sizes": []
     }
 
     for epoch_num in range(hyperparameters["num_epochs"]):
@@ -205,6 +206,7 @@ if __name__ == "__main__":
         training_history["training_losses"].append(training_loss)
         training_history["validation_losses"].append(validation_loss)
         training_history["validation_scores"].append(validation_score)
+        training_history["training_sizes"].append(training_size)
     
     logger.info(f"Final training loss: {training_history['training_losses'][-1]:.4f}")
     if hyperparameters["evaluation_enabled"]:
