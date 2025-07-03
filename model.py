@@ -51,10 +51,14 @@ class Model(nn.Module):
         print("[QwenDecoder] embed_tokens device:", self.qwen_decoder.qwen_model.model.embed_tokens.weight.device)
 
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
+        self.qwen_decoder.qwen_model.model.resize_token_embeddings(len(self.tokenizer))
+        logger.info(f"✅ Adding BOS to Qwen tokenizer ({self.tokenizer.bos_token_id})")
 
     def forward(self, images, input_ids, attention_mask):
         input_ids = input_ids.to(get_device())
         attention_mask = attention_mask.to(get_device())
+        
         
         # logger.info(f"input_ids device: {input_ids.device}")
         # logger.info(f"attention_mask device: {attention_mask.device}")

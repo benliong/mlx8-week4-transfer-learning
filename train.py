@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 hyperparameters = {
     "batch_size": 4, 
-    "num_epochs": 5,
+    "num_epochs": 1,
     "learning_rate": 0.0001,
     "learning_rate_decay": 0.8,
     "learning_rate_decay_step": 1,
@@ -31,6 +31,7 @@ hyperparameters = {
     "tokenizer_name": "Qwen/Qwen3-0.6B-Base",
     "max_caption_length": 128,
     "training_size_limit": 500, # None for max
+    "evaluation_enabled": False,
 }
 
 def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir = "saved_models"):
@@ -84,7 +85,12 @@ def train(model, training_dataloader, validation_dataloader, optimizer, device, 
     for batch_idx, batch in pbar:
         batch_images = batch["image"]
         batch_input_ids = batch["input_ids"].to(device)
+        bos_token_id = model.tokenizer.bos_token_id
+        batch_bos_ids = torch.full((batch_input_ids.shape[0], 1), bos_token_id, dtype=torch.long, device=device)
+        batch_input_ids = torch.cat([batch_bos_ids, batch_input_ids], dim=1).to(device)
         batch_attention_mask = batch["attention_mask"].to(device)   
+        batch_attention_mask = torch.cat([torch.ones((batch_input_ids.shape[0], 1), dtype=torch.long, device=device), batch_attention_mask], dim=1).to(device)
+
 
         # batch_attention_mask = batch["attention_mask"].to(device)  # ✅ Also get attention mask
         outputs = model(
@@ -110,20 +116,29 @@ def train(model, training_dataloader, validation_dataloader, optimizer, device, 
             logger.info(f"Epoch {epoch_num}/{num_epochs}, Batch {batch_idx + 1}/{len(training_dataloader)}, "
                        f"Current Loss: {loss.item():.4f}, Running Avg Loss: {current_avg_loss:.4f}")
 
-    validation_loss, validation_score = evaluate(
-        dataloader=validation_dataloader,
-        model=model,
-        epoch_num=epoch_num,
-        num_epochs=num_epochs
-    )
+    if hyperparameters["evaluation_enabled"]:
+        validation_loss, validation_score = evaluate(
+            dataloader=validation_dataloader,
+            model=model,
+            epoch_num=epoch_num,
+            num_epochs=num_epochs
+        )
+    else:
+        validation_loss = None
+        validation_score = None
+
     training_loss = running_loss / len(training_dataloader)
     training_size = len(training_dataloader)
     save_model(model, optimizer, epoch_num, training_loss, validation_score, training_size)
     logger.info(f"Training Epoch {epoch_num}/{num_epochs} completed!")
     logger.info(f"Training size: {training_size}")
     logger.info(f"Training loss: {training_loss}")
-    logger.info(f"Validation loss: {validation_loss}")
-    logger.info(f"Validation score: {validation_score}")
+    if hyperparameters["evaluation_enabled"]:
+        logger.info(f"Validation loss: {validation_loss}")
+        logger.info(f"Validation score: {validation_score}")
+    else:
+        logger.info(f"Validation loss: N/A")
+        logger.info(f"Validation score: N/A")
     
     if hyperparameters["learning_rate_scheduler_enabled"]:
         scheduler.step()
@@ -170,7 +185,7 @@ if __name__ == "__main__":
             validation_dataloader=validation_dataloader,
             optimizer=optimizer,
             device=get_device(),
-            epoch_num=epoch_num,
+            epoch_num=epoch_num+1,
             num_epochs=hyperparameters["num_epochs"],
             timestamp=timestamp
         )
@@ -180,39 +195,11 @@ if __name__ == "__main__":
         training_history["validation_losses"].append(validation_loss)
         training_history["validation_scores"].append(validation_score)
     
-    # logger.info("Training completed! Saving model...")
-    
-    # # Create saved_models directory if it doesn't exist
-    # save_dir = "saved_models"
-    # os.makedirs(save_dir, exist_ok=True)
-    
-    # # Generate timestamp for unique filename
-    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # # Save model state dict (recommended approach)
-    # model_path = os.path.join(save_dir, f"model_state_dict_{timestamp}.pth")
-    # torch.save({
-    #     'model_state_dict': model.state_dict(),
-    #     'optimizer_state_dict': optimizer.state_dict(),
-    #     'hyperparameters': hyperparameters,
-    #     'training_history': training_history,
-    #     'epoch': hyperparameters["num_epochs"],
-    # }, model_path)
-    
-    # # Save hyperparameters and training history as JSON for easy access
-    # metadata_path = os.path.join(save_dir, f"training_metadata_{timestamp}.json")
-    # with open(metadata_path, 'w') as f:
-    #     json.dump({
-    #         'hyperparameters': hyperparameters,
-    #         'training_history': training_history,
-    #         'model_path': model_path,
-    #         'timestamp': timestamp
-    #     }, f, indent=2)
-    
-    # logger.info(f"Model saved successfully!")
-    # logger.info(f"Model state dict: {model_path}")
-    # logger.info(f"Training metadata: {metadata_path}")
     logger.info(f"Final training loss: {training_history['training_losses'][-1]:.4f}")
-    logger.info(f"Final validation loss: {training_history['validation_losses'][-1]:.4f}")
-    logger.info(f"Final validation score: {training_history['validation_scores'][-1]:.4f}")
+    if hyperparameters["evaluation_enabled"]:
+        logger.info(f"Final validation loss: {training_history['validation_losses'][-1]:.4f}")
+        logger.info(f"Final validation score: {training_history['validation_scores'][-1]:.4f}")
+    else:
+        logger.info(f"Final validation loss: N/A")
+        logger.info(f"Final validation score: N/A")
     
