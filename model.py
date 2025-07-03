@@ -14,7 +14,7 @@ class ClipEncoder(nn.Module):
     def __init__(self, freeze_clip=True):
         super().__init__()
         self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", use_fast=True)
         if freeze_clip:
             for param in self.clip_model.parameters():
                 param.requires_grad = False
