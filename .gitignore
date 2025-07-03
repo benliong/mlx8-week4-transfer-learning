@@ -204,4 +204,5 @@ cython_debug/
 #ignore checkpoints (model files)
 checkpoints
 saved_models/
+images/
 uv.lock
