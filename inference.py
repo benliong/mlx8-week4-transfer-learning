@@ -93,34 +93,34 @@ if __name__ == "__main__":
     logger.info("✅ Model loaded successfully!")
     logger.info(f"Model was trained for {num_epochs} epochs")
     
-    # Use the exact BOS token ID that was saved during training
+    # Verify tokenizer consistency (the saved tokenizer should already be loaded)
     saved_bos_token_id = checkpoint.get('bos_token_id')
     saved_vocab_size = checkpoint.get('tokenizer_vocab_size')
     
+    if model.tokenizer is None:
+        logger.error("❌ No tokenizer available in loaded model!")
+        exit(1)
+    
+    current_bos_id = model.tokenizer.bos_token_id
+    current_vocab_size = len(model.tokenizer)
+    
+    logger.info(f"📊 Tokenizer Status:")
+    logger.info(f"   - Current vocab size: {current_vocab_size}")
+    logger.info(f"   - Current BOS token: '{model.tokenizer.bos_token}' (ID: {current_bos_id})")
+    
     if saved_bos_token_id is not None:
-        # Ensure tokenizer setup matches training
-        model.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
-        model.qwen_decoder.qwen_model.model.resize_token_embeddings(len(model.tokenizer))
-        
-        # Verify we got the same BOS token ID
-        current_bos_id = model.tokenizer.bos_token_id
-        current_vocab_size = len(model.tokenizer)
-        
-        if current_bos_id != saved_bos_token_id:
-            logger.error(f"❌ BOS token ID mismatch! Training: {saved_bos_token_id}, Current: {current_bos_id}")
-            logger.error("This will cause incorrect inference results!")
-            exit(1)
-        
-        if saved_vocab_size and current_vocab_size != saved_vocab_size:
-            logger.warning(f"⚠️ Vocab size mismatch! Training: {saved_vocab_size}, Current: {current_vocab_size}")
-        
-        logger.info(f"✅ BOS token ID verified: {current_bos_id} (matches training)")
-    else:
-        # Fallback for older saved models without BOS token ID
-        logger.warning("⚠️ No saved BOS token ID found. Using current tokenizer setup.")
-        model.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
-        model.qwen_decoder.qwen_model.model.resize_token_embeddings(len(model.tokenizer))
-        logger.info(f"⚠️ Using BOS token ID: {model.tokenizer.bos_token_id} (not verified)")
+        logger.info(f"   - Training BOS token ID: {saved_bos_token_id}")
+        if current_bos_id == saved_bos_token_id:
+            logger.info("✅ BOS token ID matches training!")
+        else:
+            logger.warning(f"⚠️ BOS token ID differs from training: {saved_bos_token_id} vs {current_bos_id}")
+    
+    if saved_vocab_size is not None:
+        logger.info(f"   - Training vocab size: {saved_vocab_size}")
+        if current_vocab_size == saved_vocab_size:
+            logger.info("✅ Vocab size matches training!")
+        else:
+            logger.warning(f"⚠️ Vocab size differs from training: {saved_vocab_size} vs {current_vocab_size}")
 
     # Process the image
     image = Image.open(args.image)

@@ -37,7 +37,27 @@ def check_model_bos_tokens(save_dir="saved_models"):
             saved_bos_id = checkpoint.get('bos_token_id')
             saved_vocab_size = checkpoint.get('tokenizer_vocab_size')
             
-            if saved_bos_id is not None:
+            # Check if this model has a saved tokenizer (new format)
+            tokenizer_dir = checkpoint.get('tokenizer_dir')
+            
+            if tokenizer_dir and os.path.exists(tokenizer_dir):
+                print(f"✅ Has saved tokenizer: {tokenizer_dir}")
+                print(f"✅ This model uses the COMPLETE tokenizer approach!")
+                
+                try:
+                    # Try to load the actual saved model to test
+                    model_data = load_saved_model(model_info['path'], model_class=Model)
+                    model = model_data['model']
+                    print(f"✅ Model loaded successfully with saved tokenizer")
+                    print(f"   - Vocab size: {len(model.tokenizer)}")
+                    print(f"   - BOS token: '{model.tokenizer.bos_token}' (ID: {model.tokenizer.bos_token_id})")
+                    print(f"✅ This model should work perfectly!")
+                    
+                except Exception as e:
+                    print(f"❌ Error loading model with saved tokenizer: {e}")
+                    
+            elif saved_bos_id is not None:
+                print(f"⚠️ Uses OLD tokenizer approach (BOS ID only)")
                 print(f"✅ Saved BOS token ID: {saved_bos_id}")
                 print(f"✅ Saved vocab size: {saved_vocab_size}")
                 
@@ -57,6 +77,7 @@ def check_model_bos_tokens(save_dir="saved_models"):
                 
                 if current_vocab_size != saved_vocab_size:
                     print(f"⚠️ Vocab size mismatch: Saved {saved_vocab_size}, Current {current_vocab_size}")
+                    print(f"💡 Recommend re-training with new tokenizer saving system!")
                 
             else:
                 print("❌ No BOS token ID saved (older model format)")

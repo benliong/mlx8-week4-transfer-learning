@@ -233,21 +233,49 @@ def load_saved_model(model_path, model_class=None):
     
     # If model class is provided, instantiate and load the model
     if model_class is not None:
-        model = model_class()
+        # Check if we have a saved tokenizer directory
+        tokenizer_dir = checkpoint.get('tokenizer_dir')
         
-        # Check for tokenizer size mismatch before loading state dict
-        saved_vocab_size = checkpoint.get('tokenizer_vocab_size')
-        current_vocab_size = len(model.tokenizer)
-        
-        if saved_vocab_size and saved_vocab_size != current_vocab_size:
-            logger.warning(f"⚠️ Tokenizer size mismatch detected!")
-            logger.warning(f"   Saved model vocab size: {saved_vocab_size}")
-            logger.warning(f"   Current tokenizer size: {current_vocab_size}")
-            logger.warning(f"   Attempting to resize embeddings...")
+        if tokenizer_dir and os.path.exists(tokenizer_dir):
+            logger.info(f"🔄 Loading saved tokenizer from: {tokenizer_dir}")
             
-            # Resize the model's embeddings to match the saved size
-            model.qwen_decoder.qwen_model.model.resize_token_embeddings(saved_vocab_size)
-            logger.info(f"✅ Resized embeddings to {saved_vocab_size}")
+            # Create model with saved tokenizer (BEST APPROACH!)
+            try:
+                from transformers import AutoTokenizer
+                saved_tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
+                
+                # Create model with the saved tokenizer
+                model = model_class(tokenizer_name=None, saved_tokenizer=saved_tokenizer)
+                
+                logger.info(f"✅ Using saved tokenizer:")
+                logger.info(f"   - Vocab size: {len(saved_tokenizer)}")
+                logger.info(f"   - BOS token: '{saved_tokenizer.bos_token}' (ID: {saved_tokenizer.bos_token_id})")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to load saved tokenizer: {e}")
+                logger.warning("🔄 Falling back to fresh tokenizer creation...")
+                model = model_class()  # Fallback to default
+            
+        else:
+            # Fallback: Create new model (for backward compatibility)
+            logger.warning("⚠️ No saved tokenizer found. Creating fresh tokenizer.")
+            logger.warning("   This may cause tokenizer inconsistencies!")
+            
+            model = model_class()
+            
+            # Check for tokenizer size mismatch
+            saved_vocab_size = checkpoint.get('tokenizer_vocab_size')
+            current_vocab_size = len(model.tokenizer)
+            
+            if saved_vocab_size and saved_vocab_size != current_vocab_size:
+                logger.warning(f"⚠️ Tokenizer size mismatch detected!")
+                logger.warning(f"   Saved model vocab size: {saved_vocab_size}")
+                logger.warning(f"   Current tokenizer size: {current_vocab_size}")
+                logger.warning(f"   Attempting to resize embeddings...")
+                
+                # Resize the model's embeddings to match the saved size
+                model.qwen_decoder.qwen_model.model.resize_token_embeddings(saved_vocab_size)
+                logger.info(f"✅ Resized embeddings to {saved_vocab_size}")
         
         try:
             model.load_state_dict(checkpoint['model_state_dict'])

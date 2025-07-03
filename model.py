@@ -42,7 +42,7 @@ class QwenDecoder(nn.Module):
         return self.qwen_model(inputs_embeds=input_embeddings, labels=labels)
 
 class Model(nn.Module):
-    def __init__(self, tokenizer_name="Qwen/Qwen3-0.6B-Base"):
+    def __init__(self, tokenizer_name="Qwen/Qwen3-0.6B-Base", saved_tokenizer=None):
         super().__init__()
         self.clip_encoder = ClipEncoder()
         self.mlp = nn.Linear(512, 1024)
@@ -50,10 +50,22 @@ class Model(nn.Module):
         self.qwen_decoder.qwen_model.model.embed_tokens = self.qwen_decoder.qwen_model.model.embed_tokens.to(get_device())
         print("[QwenDecoder] embed_tokens device:", self.qwen_decoder.qwen_model.model.embed_tokens.weight.device)
 
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-        self.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
-        self.qwen_decoder.qwen_model.model.resize_token_embeddings(len(self.tokenizer))
-        logger.info(f"✅ Adding BOS to Qwen tokenizer ({self.tokenizer.bos_token_id})")
+        if saved_tokenizer is not None:
+            # Use the provided saved tokenizer (for loading saved models)
+            self.tokenizer = saved_tokenizer
+            logger.info(f"✅ Using saved tokenizer (vocab size: {len(self.tokenizer)}, BOS ID: {self.tokenizer.bos_token_id})")
+        elif tokenizer_name is not None:
+            # Create new tokenizer (for training)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+            self.tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
+            logger.info(f"✅ Created fresh tokenizer with BOS token ({self.tokenizer.bos_token_id})")
+        else:
+            # No tokenizer provided - will be set later
+            self.tokenizer = None
+            logger.warning("⚠️ Model created without tokenizer - must be set manually")
+            
+        if self.tokenizer is not None:
+            self.qwen_decoder.qwen_model.model.resize_token_embeddings(len(self.tokenizer))
 
     def forward(self, images, input_ids, attention_mask):
         input_ids = input_ids.to(get_device())
@@ -101,7 +113,8 @@ class Model(nn.Module):
         # input_embeddings.input_ids = input_embeddings.input_ids
         # 3.3 generate labels from input_ids
         labels = input_ids.clone()
-        labels[labels == self.tokenizer.pad_token_id] = -100
+        if self.tokenizer is not None and hasattr(self.tokenizer, 'pad_token_id') and self.tokenizer.pad_token_id is not None:
+            labels[labels == self.tokenizer.pad_token_id] = -100
         visual_ignore = torch.full((labels.size(0), 1), -100).to(labels.device)
         labels = torch.cat([visual_ignore, labels], dim=1)  # shape: [B, T+1]
         labels = labels
