@@ -42,6 +42,11 @@ def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir
     # Generate timestamp for unique filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # Save tokenizer first (most important for consistency!)
+    tokenizer_dir = os.path.join(save_dir, f"tokenizer_{timestamp}-{epoch_num}")
+    model.tokenizer.save_pretrained(tokenizer_dir)
+    logger.info(f"✅ Tokenizer saved to: {tokenizer_dir}")
+    
     # Save model state dict (recommended approach)
     model_path = os.path.join(save_dir, f"model_state_dict_{timestamp}-{epoch_num}.pth")
     torch.save({
@@ -54,6 +59,9 @@ def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir
         'loss': loss,
         'score': score,
         'training_size': training_size,
+        'tokenizer_dir': tokenizer_dir,  # Path to the saved tokenizer
+        'bos_token_id': model.tokenizer.bos_token_id,  # Keep for verification
+        'tokenizer_vocab_size': len(model.tokenizer),  # Keep for verification
     }, model_path)
     
     # Save hyperparameters and training history as JSON for easy access
@@ -63,11 +71,14 @@ def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir
             'hyperparameters': hyperparameters,
             'training_history': training_history,
             'model_path': model_path,
+            'tokenizer_dir': tokenizer_dir,  # Include tokenizer path
             'timestamp': timestamp,
             'epoch': epoch_num,
             'num_epochs': hyperparameters["num_epochs"],
             'loss': loss,
             'score': score,
+            'bos_token_id': model.tokenizer.bos_token_id,
+            'tokenizer_vocab_size': len(model.tokenizer),
         }, f, indent=2)
     
     logger.info(f"Model saved successfully!")

@@ -11,25 +11,63 @@ import os
 setup_logging()
 logger = logging.getLogger(__name__)
 
-def inference(image, model, hyperparameters, training_history):
+def inference(image, model, hyperparameters, training_history, max_length=None):
     model.eval()
     model = model.to(get_device())
     device = get_device()
 
+    # Verify BOS token exists
+    if model.tokenizer.bos_token_id is None:
+        logger.error("BOS token not found in tokenizer!")
+        return
+    
+    logger.info(f"Using BOS token: '{model.tokenizer.bos_token}' (ID: {model.tokenizer.bos_token_id})")
     input_ids = torch.tensor([model.tokenizer.bos_token_id], dtype=torch.long, device=device)
     attention_mask = torch.ones_like(input_ids, dtype=torch.long, device=device)
 
+    # Generate text autoregressively
+    # Use training max length by default, but allow override
+    training_max_length = hyperparameters.get("max_caption_length", 128)
+    
+    if max_length is None:
+        max_length = training_max_length  # Use training length by default
+        logger.info(f"Using training max length: {max_length} tokens")
+    else:
+        logger.info(f"Using custom max length: {max_length} tokens (training used: {training_max_length})")
+        if max_length > training_max_length:
+            logger.warning(f"⚠️ Generating longer than training length! May produce lower quality text.")
+    
+    generated_tokens = [model.tokenizer.bos_token_id]
+    
     with torch.no_grad():
-        outputs = model(images=[image], input_ids=input_ids, attention_mask=attention_mask)
-        logits = outputs.logits
-        predicted_token_ids = torch.argmax(outputs.logits, dim=-1)
-        output_string = model.tokenizer.batch_decode(predicted_token_ids, skip_special_tokens=True)[0]
-        logger.info(f"Output string: {output_string}")
+        for _ in range(max_length):
+            current_input_ids = torch.tensor([generated_tokens], dtype=torch.long, device=device)
+            current_attention_mask = torch.ones_like(current_input_ids, dtype=torch.long, device=device)
+            
+            outputs = model(images=[image], input_ids=current_input_ids, attention_mask=current_attention_mask)
+            logits = outputs.logits
+            
+            # Get the next token (last token in the sequence)
+            next_token_logits = logits[0, -1, :]
+            next_token_id = torch.argmax(next_token_logits, dim=-1).item()
+            
+            # Stop if we hit EOS token
+            if hasattr(model.tokenizer, 'eos_token_id') and next_token_id == model.tokenizer.eos_token_id:
+                break
+                
+            generated_tokens.append(next_token_id)
+        
+        # Decode the full generated sequence (excluding BOS for cleaner output)
+        output_string = model.tokenizer.decode(generated_tokens[1:], skip_special_tokens=True)
+        logger.info(f"Generated text: {output_string}")
+        return output_string
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run inference on an image using a trained model")
     parser.add_argument("--model", "-m", required=True, help="Path to the model file (.pth)")
     parser.add_argument("--image", "-i", default="images/bes.jpg", help="Path to the input image (default: test.jpg)")
+    parser.add_argument("--max-length", type=int, default=None, 
+                       help="Maximum tokens to generate (default: use training max_caption_length)")
     
     try:
         args = parser.parse_args()
@@ -63,8 +101,38 @@ if __name__ == "__main__":
     hyperparameters = model_data['hyperparameters']
     training_history = model_data['training_history']
     num_epochs = model_data['epoch']
+    checkpoint = model_data['checkpoint']
     logger.info("✅ Model loaded successfully!")
     logger.info(f"Model was trained for {num_epochs} epochs")
+    
+    # Verify tokenizer consistency (the saved tokenizer should already be loaded)
+    saved_bos_token_id = checkpoint.get('bos_token_id')
+    saved_vocab_size = checkpoint.get('tokenizer_vocab_size')
+    
+    if model.tokenizer is None:
+        logger.error("❌ No tokenizer available in loaded model!")
+        exit(1)
+    
+    current_bos_id = model.tokenizer.bos_token_id
+    current_vocab_size = len(model.tokenizer)
+    
+    logger.info(f"📊 Tokenizer Status:")
+    logger.info(f"   - Current vocab size: {current_vocab_size}")
+    logger.info(f"   - Current BOS token: '{model.tokenizer.bos_token}' (ID: {current_bos_id})")
+    
+    if saved_bos_token_id is not None:
+        logger.info(f"   - Training BOS token ID: {saved_bos_token_id}")
+        if current_bos_id == saved_bos_token_id:
+            logger.info("✅ BOS token ID matches training!")
+        else:
+            logger.warning(f"⚠️ BOS token ID differs from training: {saved_bos_token_id} vs {current_bos_id}")
+    
+    if saved_vocab_size is not None:
+        logger.info(f"   - Training vocab size: {saved_vocab_size}")
+        if current_vocab_size == saved_vocab_size:
+            logger.info("✅ Vocab size matches training!")
+        else:
+            logger.warning(f"⚠️ Vocab size differs from training: {saved_vocab_size} vs {current_vocab_size}")
 
     # Process the image
     image = Image.open(args.image)
@@ -73,4 +141,8 @@ if __name__ == "__main__":
     logger.info("✅ Image loaded successfully!")
     logger.info("✅ Image converted to RGB (224x224) successfully!")
 
-    inference(image, model, hyperparameters, training_history)
+    # Run inference with specified max length
+    if args.max_length is not None:
+        logger.info(f"Using command-line max length: {args.max_length}")
+    
+    inference(image, model, hyperparameters, training_history, max_length=args.max_length)
