@@ -1,34 +1,28 @@
-from model import Model
-from utils import get_device, load_saved_model, list_saved_models, print_model_summary, get_device
+from utils import get_device, list_saved_models, get_device
 from PIL import Image
 import torch
 import argparse
 from utils import setup_logging
 import logging
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModel, AutoConfig, AutoModelForCausalLM
+from model import MultimodalClipQwenConfig, MultimodalClipQwenModel
 import os
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
-def inference(image, model, hyperparameters, training_history, max_length=None):
+def inference(image, model, max_length=None):
     model.eval()
     model = model.to(get_device())
     device = get_device()
 
-    # Verify BOS token exists
-    if model.tokenizer.bos_token_id is None:
-        logger.error("BOS token not found in tokenizer!")
-        return
-    
     logger.info(f"Using BOS token: '{model.tokenizer.bos_token}' (ID: {model.tokenizer.bos_token_id})")
     input_ids = torch.tensor([model.tokenizer.bos_token_id], dtype=torch.long, device=device)
     attention_mask = torch.ones_like(input_ids, dtype=torch.long, device=device)
 
     # Generate text autoregressively
     # Use training max length by default, but allow override
-    training_max_length = hyperparameters.get("max_caption_length", 128)
-    
+    training_max_length = model.config.hyperparameters.get("max_caption_length", 128)    
     if max_length is None:
         max_length = training_max_length  # Use training length by default
         logger.info(f"Using training max length: {max_length} tokens")
@@ -95,45 +89,18 @@ if __name__ == "__main__":
             else:
                 print("No saved models found.")
         raise  # Re-raise the SystemExit to maintain normal argparse behavior
+    
+    device = get_device()
 
-    model_data = load_saved_model(args.model, Model)
-    model = model_data['model']
-    hyperparameters = model_data['hyperparameters']
-    training_history = model_data['training_history']
-    num_epochs = model_data['epoch']
-    checkpoint = model_data['checkpoint']
-    logger.info("✅ Model loaded successfully!")
-    logger.info(f"Model was trained for {num_epochs} epochs")
+    AutoConfig.register("multimodal_clip_qwen", MultimodalClipQwenConfig)
+    AutoModel.register(MultimodalClipQwenConfig, MultimodalClipQwenModel)
     
-    # Verify tokenizer consistency (the saved tokenizer should already be loaded)
-    saved_bos_token_id = checkpoint.get('bos_token_id')
-    saved_vocab_size = checkpoint.get('tokenizer_vocab_size')
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    logger.info(f"✅ Tokenizer ({args.model}) loaded successfully!")
+    model = AutoModel.from_pretrained(args.model).to(device)
+    model.tokenizer = tokenizer
+    logger.info(f"✅ Model ({args.model}) loaded successfully!")
     
-    if model.tokenizer is None:
-        logger.error("❌ No tokenizer available in loaded model!")
-        exit(1)
-    
-    current_bos_id = model.tokenizer.bos_token_id
-    current_vocab_size = len(model.tokenizer)
-    
-    logger.info(f"📊 Tokenizer Status:")
-    logger.info(f"   - Current vocab size: {current_vocab_size}")
-    logger.info(f"   - Current BOS token: '{model.tokenizer.bos_token}' (ID: {current_bos_id})")
-    
-    if saved_bos_token_id is not None:
-        logger.info(f"   - Training BOS token ID: {saved_bos_token_id}")
-        if current_bos_id == saved_bos_token_id:
-            logger.info("✅ BOS token ID matches training!")
-        else:
-            logger.warning(f"⚠️ BOS token ID differs from training: {saved_bos_token_id} vs {current_bos_id}")
-    
-    if saved_vocab_size is not None:
-        logger.info(f"   - Training vocab size: {saved_vocab_size}")
-        if current_vocab_size == saved_vocab_size:
-            logger.info("✅ Vocab size matches training!")
-        else:
-            logger.warning(f"⚠️ Vocab size differs from training: {saved_vocab_size} vs {current_vocab_size}")
-
     # Process the image
     image = Image.open(args.image)
     image = image.resize((224, 224))
@@ -145,4 +112,4 @@ if __name__ == "__main__":
     if args.max_length is not None:
         logger.info(f"Using command-line max length: {args.max_length}")
     
-    inference(image, model, hyperparameters, training_history, max_length=args.max_length)
+    inference(image, model, max_length=args.max_length)

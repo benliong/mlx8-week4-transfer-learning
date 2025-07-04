@@ -5,7 +5,7 @@ import logging
 import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from model import Model
+from model import MultimodalClipQwenModel
 import torch.optim as optim
 from utils import get_device
 from dataset import load_flickr30k_dataset, create_flickr30k_dataloaders
@@ -15,7 +15,9 @@ import os
 import json
 from datetime import datetime
 import argparse
+from transformers import AutoTokenizer
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+from model import MultimodalClipQwenConfig, MultimodalClipQwenModel
 
 # Set up logging
 setup_logging()
@@ -23,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 hyperparameters = {
     "batch_size": 4, 
-    "num_epochs": 1,
+    "num_epochs": 10,
     "learning_rate": 0.0001,
     "learning_rate_decay": 0.8,
     "learning_rate_decay_step": 1,
@@ -33,15 +35,28 @@ hyperparameters = {
     "max_caption_length": 128,
     "training_size_limit": None, # None for max
     "evaluation_enabled": False,
+    "clip_model_name": "openai/clip-vit-base-patch32",
+    "qwen_model_name": "Qwen/Qwen3-0.6B-Base",
+    "mlp_hidden_size": 1024,
+    "clip_hidden_size": 512,
 }
 
-def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir = "saved_models", training_history=None):
+config = MultimodalClipQwenConfig(
+    clip_model_name=hyperparameters["clip_model_name"],
+    qwen_model_name=hyperparameters["qwen_model_name"],
+    mlp_hidden_size=hyperparameters["mlp_hidden_size"],
+    clip_hidden_size=hyperparameters["clip_hidden_size"], 
+    tokenizer_name=hyperparameters["tokenizer_name"]
+)
+
+def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir = "saved_models", training_history=None, tokenizer=None, timestamp=None):
     logger.info("Saving model...")
     
     os.makedirs(save_dir, exist_ok=True)
     
     # Generate timestamp for unique filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Create model directory (AutoModel format)
     model_dir = os.path.join(save_dir, f"model_{timestamp}-epoch{epoch_num}")
@@ -197,7 +212,7 @@ def load_model(model_dir, device=None):
         logger.error(f"❌ Error loading model: {str(e)}")
         return None
 
-def train(model, training_dataloader, validation_dataloader, optimizer, device, epoch_num, num_epochs, timestamp, training_history=None):
+def train(model, training_dataloader, validation_dataloader, optimizer, device, epoch_num, num_epochs, timestamp, training_history=None, tokenizer=None):
     model.train()
     running_loss = 0
     log_interval = 10  # Log every 10 batches
@@ -252,7 +267,7 @@ def train(model, training_dataloader, validation_dataloader, optimizer, device, 
 
     training_loss = running_loss / len(training_dataloader)
     training_size = len(training_dataloader)
-    save_model(model, optimizer, epoch_num, training_loss, validation_score, training_size, training_history=training_history)
+    save_model(model, optimizer, epoch_num, training_loss, validation_score, training_size, training_history=training_history, tokenizer=tokenizer, timestamp=timestamp)
     logger.info(f"Training Epoch {epoch_num}/{num_epochs} completed!")
     logger.info(f"Training size: {training_size}")
     logger.info(f"Training loss: {training_loss}")
@@ -307,7 +322,8 @@ if __name__ == "__main__":
 
     logger.info("Flickr30K Dataset loading completed!")
 
-    model = Model().to(get_device())
+
+    model = MultimodalClipQwenModel(config).to(get_device())
     optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
     if hyperparameters["learning_rate_scheduler_enabled"]:
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=hyperparameters["learning_rate_decay_step"], gamma=hyperparameters["learning_rate_decay"])
@@ -319,6 +335,13 @@ if __name__ == "__main__":
         "validation_scores": [],
         "training_sizes": []
     }
+
+    # Initialize tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name)
+    tokenizer.add_special_tokens({"bos_token": "<|im_start|>"})
+    model.tokenizer = tokenizer
+    logger.info(f"✅ Created fresh tokenizer with BOS token ({model.tokenizer.bos_token_id})")
+    
 
     for epoch_num in range(hyperparameters["num_epochs"]):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -332,7 +355,8 @@ if __name__ == "__main__":
             epoch_num=epoch_num+1,
             num_epochs=hyperparameters["num_epochs"],
             timestamp=timestamp,
-            training_history=training_history
+            training_history=training_history,
+            tokenizer=tokenizer
         )
         
         # Store training metrics
