@@ -1,7 +1,7 @@
 import torch
 from tqdm import tqdm
 from dataset import load_flickr30k_dataset, create_flickr30k_dataloaders
-from model import Model
+from model import MultimodalClipQwenModel, MultimodalClipQwenConfig
 from utils import get_device, setup_logging
 import torch.nn as nn
 import logging
@@ -49,13 +49,30 @@ def evaluate(dataloader, model, epoch_num, num_epochs):
 
 if __name__ == "__main__":
     hyperparameters = {
-        "batch_size": 1, 
+        "batch_size": 4, 
         "num_epochs": 1,
-        "learning_rate": 0.001,
+        "learning_rate": 0.0001,
+        "learning_rate_decay": 0.8,
+        "learning_rate_decay_step": 1,
+        "learning_rate_scheduler_enabled": True,
         "image_size": 224,
         "tokenizer_name": "Qwen/Qwen3-0.6B-Base",
         "max_caption_length": 128,
+        "training_size_limit": None, # None for max
+        "evaluation_enabled": False,
+        "clip_model_name": "openai/clip-vit-base-patch32",
+        "qwen_model_name": "Qwen/Qwen3-0.6B-Base",
+        "mlp_hidden_size": 1024,
+        "clip_hidden_size": 512,
     }
+
+    config = MultimodalClipQwenConfig(
+        clip_model_name=hyperparameters["clip_model_name"],
+        qwen_model_name=hyperparameters["qwen_model_name"],
+        mlp_hidden_size=hyperparameters["mlp_hidden_size"],
+        clip_hidden_size=hyperparameters["clip_hidden_size"], 
+        tokenizer_name=hyperparameters["tokenizer_name"]
+    )
 
     datasets = load_flickr30k_dataset()
     dataloaders = create_flickr30k_dataloaders(
@@ -71,7 +88,7 @@ if __name__ == "__main__":
     test_dataloader = dataloaders['test']
 
     loss_function = nn.CrossEntropyLoss()
-    model = Model()
+    model = MultimodalClipQwenModel(config)
     model = model.to(get_device())
 
     evaluate(
