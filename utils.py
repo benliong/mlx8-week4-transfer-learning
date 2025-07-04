@@ -195,21 +195,93 @@ def verify_flickr30k_cache():
 
 def load_saved_model(model_path, model_class=None):
     """
-    Load a saved model state dict and associated metadata.
+    Load a saved model in HuggingFace format.
     
     Args:
-        model_path (str): Path to the saved model file (.pth)
+        model_path (str): Path to the saved model directory (HuggingFace format)
         model_class (class, optional): Model class to instantiate. If not provided,
                                      will return only the checkpoint data.
     
     Returns:
         dict: Dictionary containing:
             - 'model': Instantiated model with loaded weights (if model_class provided)
-            - 'optimizer_state_dict': Saved optimizer state
-            - 'hyperparameters': Training hyperparameters
-            - 'training_history': Training metrics history
-            - 'epoch': Number of epochs trained
-            - 'checkpoint': Raw checkpoint data
+            - 'optimizer_state_dict': Saved optimizer state (if available)
+            - 'training_metadata': Training metadata
+            - 'model_path': Path to the model directory
+    """
+    import json
+    import os
+    from model import VisionLanguageModel
+    from transformers import AutoTokenizer
+    
+    logger = logging.getLogger(__name__)
+    
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model directory not found: {model_path}")
+    
+    # Check if it's a HuggingFace format directory
+    config_file = os.path.join(model_path, "config.json")
+    model_file = os.path.join(model_path, "pytorch_model.bin")
+    tokenizer_config = os.path.join(model_path, "tokenizer_config.json")
+    
+    if os.path.exists(config_file) and os.path.exists(tokenizer_config):
+        # New HuggingFace format
+        logger.info(f"🔄 Loading HuggingFace format model from: {model_path}")
+        
+        # Load the model using the new format
+        try:
+            model = VisionLanguageModel.from_pretrained(model_path)
+            logger.info("✅ Model loaded successfully using HuggingFace format")
+            
+            # Load additional metadata if available
+            metadata_file = os.path.join(model_path, "training_metadata.json")
+            optimizer_file = os.path.join(model_path, "optimizer.pth")
+            
+            training_metadata = None
+            optimizer_state_dict = None
+            
+            if os.path.exists(metadata_file):
+                with open(metadata_file, 'r') as f:
+                    training_metadata = json.load(f)
+                logger.info("✅ Training metadata loaded")
+            
+            if os.path.exists(optimizer_file):
+                optimizer_data = torch.load(optimizer_file, map_location=get_device())
+                optimizer_state_dict = optimizer_data.get('optimizer_state_dict')
+                logger.info("✅ Optimizer state loaded")
+            
+            return {
+                'model': model,
+                'optimizer_state_dict': optimizer_state_dict,
+                'training_metadata': training_metadata,
+                'model_path': model_path
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to load HuggingFace format model: {e}")
+            raise
+    
+    else:
+        # Legacy format (old state dict format)
+        logger.info(f"🔄 Loading legacy format model from: {model_path}")
+        
+        # Check if it's a .pth file
+        if model_path.endswith('.pth'):
+            return load_legacy_model(model_path, model_class)
+        else:
+            raise ValueError(f"Unsupported model format in directory: {model_path}")
+
+
+def load_legacy_model(model_path, model_class=None):
+    """
+    Load a model saved in the old state dict format.
+    
+    Args:
+        model_path (str): Path to the saved model file (.pth)
+        model_class (class, optional): Model class to instantiate
+    
+    Returns:
+        dict: Dictionary containing model and metadata
     """
     import json
     import os
@@ -296,7 +368,7 @@ def load_saved_model(model_path, model_class=None):
 
 def list_saved_models(save_dir="saved_models"):
     """
-    List all saved models in the specified directory.
+    List all saved models in the specified directory (both HuggingFace and legacy formats).
     
     Args:
         save_dir (str): Directory containing saved models
@@ -314,9 +386,45 @@ def list_saved_models(save_dir="saved_models"):
     
     models = []
     
-    # Look for model files
+    # Look for both HuggingFace format directories and legacy .pth files
     for filename in os.listdir(save_dir):
-        if filename.startswith("model_state_dict_") and filename.endswith(".pth"):
+        full_path = os.path.join(save_dir, filename)
+        
+        if os.path.isdir(full_path):
+            # Check if it's a HuggingFace format directory
+            config_file = os.path.join(full_path, "config.json")
+            tokenizer_config = os.path.join(full_path, "tokenizer_config.json")
+            
+            if os.path.exists(config_file) and os.path.exists(tokenizer_config):
+                # HuggingFace format
+                metadata_file = os.path.join(full_path, "training_metadata.json")
+                metadata = None
+                
+                if os.path.exists(metadata_file):
+                    try:
+                        with open(metadata_file, 'r') as f:
+                            metadata = json.load(f)
+                    except Exception as e:
+                        print(f"Error reading metadata for {filename}: {e}")
+                
+                # Get directory size
+                total_size = 0
+                for dirpath, dirnames, filenames in os.walk(full_path):
+                    for f in filenames:
+                        fp = os.path.join(dirpath, f)
+                        total_size += os.path.getsize(fp)
+                
+                models.append({
+                    'filename': filename,
+                    'path': full_path,
+                    'type': 'huggingface',
+                    'timestamp': filename.split('_')[-1] if '_' in filename else filename,
+                    'size_mb': total_size / (1024 * 1024),
+                    'metadata': metadata
+                })
+        
+        elif filename.startswith("model_state_dict_") and filename.endswith(".pth"):
+            # Legacy format
             model_path = os.path.join(save_dir, filename)
             
             # Extract timestamp from filename
@@ -339,6 +447,7 @@ def list_saved_models(save_dir="saved_models"):
             models.append({
                 'filename': filename,
                 'path': model_path,
+                'type': 'legacy',
                 'timestamp': timestamp_str,
                 'size_mb': file_size_mb,
                 'metadata': metadata
@@ -352,7 +461,7 @@ def list_saved_models(save_dir="saved_models"):
 
 def print_model_summary(save_dir="saved_models"):
     """
-    Print a summary of all saved models.
+    Print a summary of all saved models (both HuggingFace and legacy formats).
     
     Args:
         save_dir (str): Directory containing saved models
@@ -370,6 +479,7 @@ def print_model_summary(save_dir="saved_models"):
         print(f"{i}. {model_info['filename']}")
         print(f"   📁 Size: {model_info['size_mb']:.1f} MB")
         print(f"   📅 Timestamp: {model_info['timestamp']}")
+        print(f"   🔧 Format: {model_info['type'].upper()}")
         
         if model_info['metadata']:
             metadata = model_info['metadata']

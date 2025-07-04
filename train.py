@@ -5,7 +5,8 @@ import logging
 import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from model import Model
+from model import Model, VisionLanguageModel
+from configuration import VisionLanguageConfig
 import torch.optim as optim
 from utils import get_device
 from dataset import load_flickr30k_dataset, create_flickr30k_dataloaders
@@ -42,48 +43,45 @@ def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir
     # Generate timestamp for unique filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Save tokenizer first (most important for consistency!)
-    tokenizer_dir = os.path.join(save_dir, f"tokenizer_{timestamp}-{epoch_num}")
-    model.tokenizer.save_pretrained(tokenizer_dir)
-    logger.info(f"✅ Tokenizer saved to: {tokenizer_dir}")
+    # Create model directory
+    model_save_path = os.path.join(save_dir, f"model_{timestamp}_epoch_{epoch_num}")
+    os.makedirs(model_save_path, exist_ok=True)
     
-    # Save model state dict (recommended approach)
-    model_path = os.path.join(save_dir, f"model_state_dict_{timestamp}-{epoch_num}.pth")
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
+    # Save model using HuggingFace format
+    model.save_pretrained(model_save_path)
+    logger.info(f"✅ Model and tokenizer saved to: {model_save_path}")
+    
+    # Save additional training metadata
+    training_metadata = {
         'hyperparameters': hyperparameters,
         'training_history': training_history,
+        'timestamp': timestamp,
         'epoch': epoch_num,
         'num_epochs': hyperparameters["num_epochs"],
         'loss': loss,
         'score': score,
         'training_size': training_size,
-        'tokenizer_dir': tokenizer_dir,  # Path to the saved tokenizer
-        'bos_token_id': model.tokenizer.bos_token_id,  # Keep for verification
-        'tokenizer_vocab_size': len(model.tokenizer),  # Keep for verification
-    }, model_path)
+        'bos_token_id': model.tokenizer.bos_token_id,
+        'tokenizer_vocab_size': len(model.tokenizer),
+        'model_path': model_save_path,
+    }
     
-    # Save hyperparameters and training history as JSON for easy access
-    metadata_path = os.path.join(save_dir, f"training_metadata_{timestamp}-{epoch_num}.json")
+    # Save optimizer state separately (not part of HuggingFace format)
+    optimizer_path = os.path.join(model_save_path, "optimizer.pth")
+    torch.save({
+        'optimizer_state_dict': optimizer.state_dict(),
+        'training_metadata': training_metadata,
+    }, optimizer_path)
+    
+    # Save training metadata as JSON for easy access
+    metadata_path = os.path.join(model_save_path, f"training_metadata.json")
     with open(metadata_path, 'w') as f:
-        json.dump({
-            'hyperparameters': hyperparameters,
-            'training_history': training_history,
-            'model_path': model_path,
-            'tokenizer_dir': tokenizer_dir,  # Include tokenizer path
-            'timestamp': timestamp,
-            'epoch': epoch_num,
-            'num_epochs': hyperparameters["num_epochs"],
-            'loss': loss,
-            'score': score,
-            'bos_token_id': model.tokenizer.bos_token_id,
-            'tokenizer_vocab_size': len(model.tokenizer),
-        }, f, indent=2)
+        json.dump(training_metadata, f, indent=2)
     
     logger.info(f"Model saved successfully!")
-    logger.info(f"Model state dict: {model_path}")
+    logger.info(f"Model directory: {model_save_path}")
     logger.info(f"Training metadata: {metadata_path}")
+    logger.info(f"Optimizer state: {optimizer_path}")
 
 def train(model, training_dataloader, validation_dataloader, optimizer, device, epoch_num, num_epochs, timestamp):
     model.train()
