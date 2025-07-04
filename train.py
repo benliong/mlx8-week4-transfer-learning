@@ -30,7 +30,7 @@ hyperparameters = {
     "image_size": 224,
     "tokenizer_name": "Qwen/Qwen3-0.6B-Base",
     "max_caption_length": 128,
-    "training_size_limit": 500, # None for max
+    "training_size_limit": None, # None for max
     "evaluation_enabled": False,
 }
 
