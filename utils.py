@@ -411,10 +411,10 @@ def print_model_summary(save_dir="saved_models"):
             print(f"   📁 Type: Folder (New Structure)")
             print(f"   📦 Total Size: {model_info['size_mb']:.1f} MB")
         else:
-            print(f"   � Type: File (Legacy Structure)")
+            print(f"   🔹 Type: File (Legacy Structure)")
             print(f"   📁 Size: {model_info['size_mb']:.1f} MB")
         
-        print(f"   �� Timestamp: {model_info['timestamp']}")
+        print(f"   📅 Timestamp: {model_info['timestamp']}")
         
         if model_info['metadata']:
             metadata = model_info['metadata']
@@ -450,3 +450,138 @@ def print_model_summary(save_dir="saved_models"):
                 pass
                 
         print("-" * 40)
+
+
+def find_model(model_identifier=None, save_dir="saved_models"):
+    """
+    Smart model finder that supports multiple ways to specify models.
+    
+    Args:
+        model_identifier (str, optional): Can be:
+            - None: Returns the latest model
+            - Full path: "saved_models/20241205_143022-epoch_1/" 
+            - Folder name: "20241205_143022-epoch_1"
+            - Timestamp: "20241205_143022"
+            - Partial match: "20241205" or "epoch_1"
+            - Index: "1" (first/latest), "2" (second), etc.
+        save_dir (str): Directory containing saved models
+    
+    Returns:
+        str: Path to the model (folder or file)
+    
+    Raises:
+        FileNotFoundError: If no models found or no match
+        ValueError: If multiple ambiguous matches found
+    """
+    import os
+    
+    models = list_saved_models(save_dir)
+    
+    if not models:
+        raise FileNotFoundError(f"No saved models found in '{save_dir}'")
+    
+    # If no identifier provided, return latest model
+    if model_identifier is None:
+        latest_model = models[0]  # models are sorted by timestamp, newest first
+        return latest_model['path']
+    
+    # Convert to string for consistent handling
+    model_identifier = str(model_identifier)
+    
+    # Check if it's a full path that exists
+    if os.path.exists(model_identifier):
+        return model_identifier
+    
+    # Check if it's a numeric index (1-based)
+    if model_identifier.isdigit():
+        index = int(model_identifier) - 1
+        if 0 <= index < len(models):
+            return models[index]['path']
+        else:
+            raise ValueError(f"Index {model_identifier} out of range. Available: 1-{len(models)}")
+    
+    # Find matches based on various criteria
+    exact_matches = []
+    partial_matches = []
+    
+    for model in models:
+        filename = model['filename']
+        
+        # Exact folder name match
+        if filename == model_identifier:
+            exact_matches.append(model)
+        # Partial matches
+        elif model_identifier in filename:
+            partial_matches.append(model)
+    
+    # Return exact match if found
+    if len(exact_matches) == 1:
+        return exact_matches[0]['path']
+    elif len(exact_matches) > 1:
+        raise ValueError(f"Multiple exact matches found for '{model_identifier}': {[m['filename'] for m in exact_matches]}")
+    
+    # Return partial match if only one found
+    if len(partial_matches) == 1:
+        return partial_matches[0]['path']
+    elif len(partial_matches) > 1:
+        matches_str = '\n'.join([f"  {i+1}. {m['filename']}" for i, m in enumerate(partial_matches)])
+        raise ValueError(f"Multiple matches found for '{model_identifier}':\n{matches_str}\n\nPlease be more specific or use an index (1-{len(partial_matches)})")
+    
+    # No matches found
+    available_models = '\n'.join([f"  {i+1}. {m['filename']}" for i, m in enumerate(models)])
+    raise FileNotFoundError(f"No model found matching '{model_identifier}'\n\nAvailable models:\n{available_models}")
+
+
+def load_model_for_inference(model_identifier=None, save_dir="saved_models"):
+    """
+    Convenient function to load a model for inference with smart model selection.
+    
+    Args:
+        model_identifier (str, optional): Model identifier (see find_model for options)
+        save_dir (str): Directory containing saved models
+    
+    Returns:
+        dict: Loaded model data with all components
+    
+    Examples:
+        # Load latest model
+        model_data = load_model_for_inference()
+        
+        # Load by index
+        model_data = load_model_for_inference("1")  # latest
+        model_data = load_model_for_inference("2")  # second latest
+        
+        # Load by timestamp
+        model_data = load_model_for_inference("20241205_143022")
+        
+        # Load by partial match
+        model_data = load_model_for_inference("epoch_1")
+    """
+    import os
+    import logging
+    from model import Model
+    
+    logger = logging.getLogger(__name__)
+    
+    model_path = find_model(model_identifier, save_dir)
+    
+    logger.info(f"Loading model from: {model_path}")
+    model_data = load_saved_model(model_path, Model)
+    
+    # Log model information
+    logger.info("✅ Model loaded successfully!")
+    logger.info(f"📅 Timestamp: {model_data.get('timestamp', 'N/A')}")
+    logger.info(f"🏋️ Epoch: {model_data.get('epoch', 'N/A')}")
+    
+    if model_data.get('hyperparameters'):
+        hyperparams = model_data['hyperparameters']
+        logger.info(f"📈 Batch Size: {hyperparams.get('batch_size', 'N/A')}")
+        logger.info(f"🎯 Learning Rate: {hyperparams.get('learning_rate', 'N/A')}")
+    
+    if model_data.get('training_history'):
+        history = model_data['training_history']
+        if history.get('training_losses'):
+            final_loss = history['training_losses'][-1]
+            logger.info(f"📉 Final Training Loss: {final_loss:.4f}")
+    
+    return model_data

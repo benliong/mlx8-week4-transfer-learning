@@ -1,5 +1,5 @@
 from model import Model
-from utils import get_device, load_saved_model, list_saved_models, print_model_summary, get_device
+from utils import get_device, load_model_for_inference, print_model_summary, get_device
 from PIL import Image
 import torch
 import argparse
@@ -27,25 +27,69 @@ def inference(image, model, hyperparameters, training_history):
         logger.info(f"Output string: {output_string}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run inference on an image using a trained model")
-    parser.add_argument("--model", "-m", required=True, help="Path to the model file (.pth)")
-    parser.add_argument("--image", "-i", default="images/bes.jpg", help="Path to the input image (default: test.jpg)")
+    parser = argparse.ArgumentParser(
+        description="Run inference on an image using a trained model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Model Selection Options:
+  --model (no value)     : Use latest model
+  --model 1              : Use latest model (by index)
+  --model 2              : Use second latest model
+  --model 20241205_143022: Use model matching timestamp
+  --model epoch_1        : Use model matching partial string
+  --model full/path      : Use specific path
+  
+  --list                 : Show all available models
+        """
+    )
+    parser.add_argument(
+        "--model", "-m", 
+        nargs="?", 
+        const=None,
+        default=None,
+        help="Model identifier (latest if not specified). See examples below."
+    )
+    parser.add_argument(
+        "--image", "-i", 
+        default="images/bes.jpg", 
+        help="Path to the input image (default: images/bes.jpg)"
+    )
+    parser.add_argument(
+        "--list", 
+        action="store_true",
+        help="List all available models and exit"
+    )
 
     args = parser.parse_args()
 
-    model_data = load_saved_model(args.model, Model)
-    model = model_data['model']
-    hyperparameters = model_data['hyperparameters']
-    training_history = model_data['training_history']
-    num_epochs = model_data['epoch']
-    logger.info("✅ Model loaded successfully!")
-    logger.info(f"Model was trained for {num_epochs} epochs")
+    if args.list:
+        print_model_summary()
+        exit(0)
 
-    # Process the image
-    image = Image.open(args.image)
-    image = image.resize((224, 224))
-    image = image.convert("RGB")
-    logger.info("✅ Image loaded successfully!")
-    logger.info("✅ Image converted to RGB (224x224) successfully!")
+    try:
+        # Use the new smart model loading system
+        model_data = load_model_for_inference(args.model)
+        model = model_data['model']
+        hyperparameters = model_data['hyperparameters']
+        training_history = model_data['training_history']
+        
+        # Process the image
+        image = Image.open(args.image)
+        image = image.resize((224, 224))
+        image = image.convert("RGB")
+        logger.info("✅ Image loaded successfully!")
+        logger.info("✅ Image converted to RGB (224x224) successfully!")
 
-    inference(image, model, hyperparameters, training_history)
+        inference(image, model, hyperparameters, training_history)
+        
+    except FileNotFoundError as e:
+        logger.error(f"❌ Error: {e}")
+        logger.info("\nAvailable models:")
+        print_model_summary()
+        exit(1)
+    except ValueError as e:
+        logger.error(f"❌ Error: {e}")
+        exit(1)
+    except Exception as e:
+        logger.error(f"❌ Error during inference: {e}")
+        raise
