@@ -14,6 +14,7 @@ import torch
 import os
 import json
 from datetime import datetime
+import argparse
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Set up logging
@@ -157,6 +158,26 @@ def train(model, training_dataloader, validation_dataloader, optimizer, device, 
     return training_loss, validation_loss, validation_score, training_size
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train the model")
+    parser.add_argument(
+        "--training-size-limit", 
+        type=int, 
+        help="Limit the number of training samples (None or 0 for unlimited)"
+    )
+    args = parser.parse_args()
+
+    # Override training size limit if provided
+    if args.training_size_limit is not None:
+        # Treat 0 as unlimited (None)
+        if args.training_size_limit == 0:
+            hyperparameters["training_size_limit"] = None
+            logger.info("Training size limit set to unlimited (0 provided)")
+        else:
+            hyperparameters["training_size_limit"] = args.training_size_limit
+            logger.info(f"Training size limit overridden to: {args.training_size_limit}")
+    else:
+        logger.info(f"Using default training size limit: {hyperparameters['training_size_limit']}")
+
     datasets = load_flickr30k_dataset()
     dataloaders = create_flickr30k_dataloaders(
         datasets=datasets,
