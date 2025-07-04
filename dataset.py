@@ -298,6 +298,8 @@ def create_flickr30k_dataloaders(datasets,
     pin_memory = torch.cuda.is_available()  # True only on NVIDIA GPU
 
     train_split = datasets['train']
+    val_split = datasets['validation']  # Initialize val_split to avoid UnboundLocalError
+    
     if train_size_limit is not None and train_size_limit > 0:
         original_train_size = len(train_split)
         train_size_limit = min(train_size_limit, original_train_size)
