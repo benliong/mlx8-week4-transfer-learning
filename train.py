@@ -37,13 +37,18 @@ hyperparameters = {
 def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir = "saved_models"):
     logger.info("Saving model...")
     
+    # Create main save directory
     os.makedirs(save_dir, exist_ok=True)
     
-    # Generate timestamp for unique filename
+    # Generate timestamp for unique folder name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # Create a folder for this specific model save
+    model_folder = os.path.join(save_dir, f"{timestamp}-epoch_{epoch_num}")
+    os.makedirs(model_folder, exist_ok=True)
+    
     # Save model state dict (recommended approach)
-    model_path = os.path.join(save_dir, f"model_state_dict_{timestamp}-{epoch_num}.pth")
+    model_path = os.path.join(model_folder, "model_state_dict.pth")
     torch.save({
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
@@ -54,25 +59,74 @@ def save_model(model, optimizer, epoch_num, loss, score, training_size, save_dir
         'loss': loss,
         'score': score,
         'training_size': training_size,
+        'timestamp': timestamp,
     }, model_path)
     
+    # Save tokenizer in the same folder
+    tokenizer_path = os.path.join(model_folder, "tokenizer")
+    try:
+        model.tokenizer.save_pretrained(tokenizer_path)
+        logger.info(f"Tokenizer saved to: {tokenizer_path}")
+    except Exception as e:
+        logger.warning(f"Failed to save tokenizer: {e}")
+    
     # Save hyperparameters and training history as JSON for easy access
-    metadata_path = os.path.join(save_dir, f"training_metadata_{timestamp}-{epoch_num}.json")
+    metadata_path = os.path.join(model_folder, "training_metadata.json")
     with open(metadata_path, 'w') as f:
         json.dump({
             'hyperparameters': hyperparameters,
             'training_history': training_history,
             'model_path': model_path,
+            'tokenizer_path': tokenizer_path,
             'timestamp': timestamp,
             'epoch': epoch_num,
             'num_epochs': hyperparameters["num_epochs"],
             'loss': loss,
             'score': score,
+            'training_size': training_size,
         }, f, indent=2)
     
-    logger.info(f"Model saved successfully!")
-    logger.info(f"Model state dict: {model_path}")
-    logger.info(f"Training metadata: {metadata_path}")
+    # Create a simple README for this model
+    readme_path = os.path.join(model_folder, "README.md")
+    with open(readme_path, 'w') as f:
+        f.write(f"""# Model Save: {timestamp}
+
+## Training Information
+- **Epoch**: {epoch_num}/{hyperparameters["num_epochs"]}
+- **Training Loss**: {loss:.4f}
+- **Validation Score**: {score if score is not None else 'N/A'}
+- **Training Size**: {training_size}
+- **Timestamp**: {timestamp}
+
+## Files
+- `model_state_dict.pth`: Model weights and optimizer state
+- `training_metadata.json`: Complete training metadata
+- `tokenizer/`: Tokenizer files
+- `README.md`: This file
+
+## Hyperparameters
+```json
+{json.dumps(hyperparameters, indent=2)}
+```
+
+## Usage
+```python
+from utils import load_saved_model
+from model import Model
+
+# Load the model
+model_data = load_saved_model("{model_path}", Model)
+model = model_data['model']
+```
+""")
+    
+    logger.info(f"Model saved successfully to folder: {model_folder}")
+    logger.info(f"├── Model state dict: {model_path}")
+    logger.info(f"├── Training metadata: {metadata_path}")
+    logger.info(f"├── Tokenizer: {tokenizer_path}")
+    logger.info(f"└── README: {readme_path}")
+    
+    return model_folder
 
 def train(model, training_dataloader, validation_dataloader, optimizer, device, epoch_num, num_epochs, timestamp):
     model.train()
